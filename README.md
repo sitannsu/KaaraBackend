@@ -30,3 +30,4 @@ Base URL: `/v1` and `/api`
 Key endpoints:
 - `GET /api/health`
 - Hotels CRUD under `/api/hotels`
+# KaaraBackend
