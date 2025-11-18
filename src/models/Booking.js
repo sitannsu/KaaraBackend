@@ -13,6 +13,11 @@ const bookingSchema = new mongoose.Schema(
 		paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },
 		status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed' },
 		guestName: { type: String },
+		email: { type: String }, // external email used (hardcoded for now)
+		externalProvider: { type: String }, // e.g., 'ipms247'
+		externalReservationId: { type: String },
+		externalPayload: { type: Object },
+		externalResponse: { type: Object },
 	},
 	{ timestamps: true }
 )

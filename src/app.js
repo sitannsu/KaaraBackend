@@ -17,6 +17,7 @@ import { router as adminRouter } from './routes/admin.js';
 import { router as analyticsRouter } from './routes/analytics.js';
 import { router as filesRouter } from './routes/files.js';
 import { router as integrationsRouter } from './routes/integrations.js';
+import { router as liveRatesRouter } from './routes/liveRates.js';
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use('/api/admin', adminRouter);
 mount('/analytics', analyticsRouter);
 mount('/files', filesRouter);
 mount('/integrations', integrationsRouter);
+mount('/live-rates', liveRatesRouter);
 
 // 404 handler
 app.use((req, res) => {

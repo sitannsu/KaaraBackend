@@ -55,7 +55,78 @@ router.post('/', async (req, res, next) => {
 			console.warn('Hotel lookup failed/timed out:', e.message);
 		}
 		
-		// Normalize
+		// Prepare external IPMS InsertBooking call
+		const HOTEL_CODE = process.env.IPMS_HOTEL_CODE || '43398';
+		const API_KEY = process.env.IPMS_API_KEY || '29800837887e1b9e5b-0578-11f0-a';
+		const hardcodedEmail = 'test@test.com';
+
+		// If the frontend sent a ready payload, use it; else construct a minimal one
+		const ipmsPayload = (() => {
+			if (payload.ipmsInsertPayload && typeof payload.ipmsInsertPayload === 'object') {
+				// Force email override irrespective of what the client sent
+				return {
+					...payload.ipmsInsertPayload,
+					Email_Address: hardcodedEmail,
+				};
+			}
+			// Fallback minimal mapper
+			const firstName = (payload.guestName || 'Guest').split(' ')[0] || 'Guest';
+			const lastName = (payload.guestName || 'User').split(' ').slice(1).join(' ') || 'User';
+			return {
+				Room_Details: {
+					Room_1: {
+						Rateplan_Id: '800000000000022',
+						Ratetype_Id: '800000000000007',
+						Roomtype_Id: '800000000000001',
+						baserate: String(payload.total || 500),
+						extradultrate: '0',
+						extrachildrate: '0',
+						number_adults: '2',
+						number_children: '1',
+						ExtraChild_Age: '2',
+						Title: '',
+						First_Name: firstName,
+						Last_Name: lastName,
+						Gender: '',
+						SpecialRequest: '',
+					}
+				},
+				check_in_date: (payload.from || new Date()).toString().slice(0, 10),
+				check_out_date: (payload.to || new Date()).toString().slice(0, 10),
+				Booking_Payment_Mode: '',
+				Email_Address: hardcodedEmail,
+				Source_Id: '',
+				MobileNo: '',
+				Address: '',
+				State: '',
+				Country: '',
+				City: '',
+				Zipcode: '',
+				Fax: '',
+				Device: '',
+				Languagekey: '',
+				paymenttypeunkid: '',
+			};
+		})();
+
+		let ipmsResponse = null;
+		try {
+			const bookingDataParam = encodeURIComponent(JSON.stringify(ipmsPayload));
+			const url = `https://live.ipms247.com/booking/reservation_api/listing.php?request_type=InsertBooking&HotelCode=${encodeURIComponent(HOTEL_CODE)}&APIKey=${encodeURIComponent(API_KEY)}&BookingData=${bookingDataParam}`;
+			const resp = await fetch(url);
+			const txt = await resp.text();
+			// IPMS might return JSON or plain text; try to parse JSON
+			try {
+				ipmsResponse = JSON.parse(txt);
+			} catch {
+				ipmsResponse = { raw: txt };
+			}
+		} catch (err) {
+			console.error('IPMS InsertBooking call failed:', err);
+			ipmsResponse = { error: true, message: err?.message || 'InsertBooking call failed' };
+		}
+
+		// Normalize and save in Mongo
 		const doc = {
 			userId: payload.userId || null,
 			hotelId: resolvedHotelId,
@@ -68,6 +139,11 @@ router.post('/', async (req, res, next) => {
 			paymentStatus: payload.paymentStatus || 'pending',
 			status: payload.status || 'confirmed',
 			guestName: payload.guestName || payload.name || 'Guest',
+			email: hardcodedEmail,
+			externalProvider: 'ipms247',
+			externalReservationId: ipmsResponse?.Reservation_Id || ipmsResponse?.reservation_id || null,
+			externalPayload: ipmsPayload,
+			externalResponse: ipmsResponse,
 		}
 		const created = await Booking.create(doc)
 		return res.status(201).json({ success: true, data: created })
