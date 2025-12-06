@@ -41,14 +41,12 @@ function buildExternalRoomTypesUrl({ hotelCode, apiKey }) {
 	return `${base}?${params.toString()}`
 }
 
-function buildExternalInsertBookingUrl({ hotelCode, apiKey, bookingData }) {
+function buildExternalInsertBookingUrl({ hotelCode, apiKey }) {
 	const base = 'https://live.ipms247.com/booking/reservation_api/listing.php'
 	const params = new URLSearchParams({
 		request_type: 'InsertBooking',
 		HotelCode: hotelCode,
 		APIKey: apiKey,
-		// BookingData must be JSON string; keep keys/case as vendor expects
-		BookingData: JSON.stringify(bookingData),
 	})
 	return `${base}?${params.toString()}`
 }
@@ -248,33 +246,61 @@ router.post('/insert-booking', async (req, res) => {
 			},
 		})
 
+		// Normalize payment mode: default 0 (Normal). Use 3 only when PG is enabled end-to-end.
+		const rawMode = meta?.bookingPaymentMode
+		let normalizedPaymentMode = Number(rawMode)
+		if (Number.isNaN(normalizedPaymentMode)) normalizedPaymentMode = 0
+		if (normalizedPaymentMode !== 0 && normalizedPaymentMode !== 3) normalizedPaymentMode = 0
+
+		// Strict ID mapping per spec
+		const mappedRateplanId = String(ids.Rateplan_Id ?? ids.roomrateunkid ?? '')
+		const mappedRatetypeId = String(ids.Ratetype_Id ?? ids.ratetypeunkid ?? '')
+		const mappedRoomtypeId = String(ids.Roomtype_Id ?? ids.roomtypeunkid ?? '')
+
+		// Build room details
+		const normalizedTitle = (() => {
+			const t = String(guests.title ?? '').trim()
+			if (!t) return 'Mr.'
+			return t.endsWith('.') ? t : `${t}.`
+		})()
+		const normalizedGender = (() => {
+			const g = String(guests.gender ?? '').trim()
+			if (!g) return 'Male'
+			return g.charAt(0).toUpperCase() + g.slice(1).toLowerCase()
+		})()
+		const room1 = {
+			Rateplan_Id: mappedRateplanId,
+			Ratetype_Id: mappedRatetypeId,
+			Roomtype_Id: mappedRoomtypeId,
+			baserate: String(rates.baserate ?? ''),
+			extradultrate: String(rates.extradultrate ?? ''),
+			extrachildrate: String(rates.extrachildrate ?? ''),
+			number_adults: String(guests.adults ?? 2),
+			number_children: String(normalizedChildren),
+			Title: normalizedTitle,
+			First_Name: String(guests.firstName),
+			Last_Name: String(guests.lastName),
+			Gender: normalizedGender,
+			Special_Request: String(guests.specialRequest ?? ''),
+			// Always include ExtraChild_Age as vendor examples show it even for 0 children
+			ExtraChild_Age: String(
+				normalizedChildren > 0
+					? (normalizedExtraChildAge === undefined || normalizedExtraChildAge === null || String(normalizedExtraChildAge) === '' ? 2 : normalizedExtraChildAge)
+					: 0
+			),
+		}
+
 		const bookingData = {
 			Room_Details: {
-				Room_1: {
-					// Map to vendor schema: Rateplan_Id corresponds to rate plan (ratetypeunkid in RoomList),
-					// Ratetype_Id corresponds to room rate id (roomrateunkid in RoomList)
-					Rateplan_Id: String(ids.Rateplan_Id || ids.Ratetype_Id || ids.ratetypeunkid || ''),
-					Ratetype_Id: String(ids.Ratetype_Id || ids.Rateplan_Id || ids.roomrateunkid || ''),
-					Roomtype_Id: String(ids.Roomtype_Id),
-					baserate: String(rates.baserate ?? ''),
-					extradultrate: String(rates.extradultrate ?? ''),
-					extrachildrate: String(rates.extrachildrate ?? ''),
-					number_adults: String(guests.adults ?? 2),
-					number_children: String(normalizedChildren),
-					ExtraChild_Age: String(normalizedExtraChildAge ?? ''),
-					Title: String(guests.title ?? ''),
-					First_Name: String(guests.firstName),
-					Last_Name: String(guests.lastName),
-					Gender: String(guests.gender ?? ''),
-					SpecialRequest: String(guests.specialRequest ?? ''),
-				},
+				Room_1: room1,
 			},
 			check_in_date: String(checkInDate),
 			check_out_date: String(checkOutDate),
-			// Some accounts require specific codes; by default keep empty (matches vendor examples)
-			Booking_Payment_Mode: String(meta.bookingPaymentMode ?? ''),
+			// Vendor expects "0" for normal flow, "3" for Payment Gateway
+			Booking_Payment_Mode: String(normalizedPaymentMode),
 			Email_Address: String(contact.email || ''),
-			Source_Id: String(meta.sourceId ?? 'KAARA-APP'),
+			// Vendor expects key "source" (lowercase)
+			source: String(meta.sourceId ?? 'KAARA-APP'),
 			MobileNo: String(contact.mobile ?? ''),
 			Address: String(contact.address ?? ''),
 			State: String(contact.state ?? ''),
@@ -282,15 +308,21 @@ router.post('/insert-booking', async (req, res) => {
 			City: String(contact.city ?? ''),
 			Zipcode: String(contact.zipcode ?? ''),
 			Fax: String(contact.fax ?? ''),
-			Device: String(meta.device ?? ''),
-			Languagekey: String(meta.languagekey ?? ''),
+			Device: String(meta.device ?? 'ANDROID') || 'ANDROID',
+			Languagekey: String(meta.languagekey ?? 'en') || 'en',
 			paymenttypeunkid: String(meta.paymenttypeunkid ?? ''),
 		}
 
-		const url = buildExternalInsertBookingUrl({ hotelCode, apiKey, bookingData })
-		// Print fully resolved vendor URL (with API key masked for logs)
+		const url = buildExternalInsertBookingUrl({ hotelCode, apiKey })
+		// Print vendor URL (without BookingData in query)
 		console.log('[insert-booking] vendorUrl', url.replace(apiKey, '***'))
-		const resp = await fetch(encodeURI(url), { method: 'GET' })
+		const formBody = new URLSearchParams()
+		formBody.set('BookingData', JSON.stringify(bookingData))
+		const resp = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: formBody.toString(),
+		})
 		const raw = await resp.json()
 		console.log('[insert-booking] vendorResponse', raw)
 		// Normalize vendor error shape: can be { Errors: {...} } or [ { 'Error Details': {...} } ]
@@ -302,13 +334,53 @@ router.post('/insert-booking', async (req, res) => {
 			(raw[0]['Error Details'] || raw[0]['ErrorDetails'])
 		if (raw?.Errors || arrayError) {
 			const errObj = raw?.Errors || arrayError
+			const errCode = (errObj?.Error_Code || errObj?.ErrorCode || '').toString()
+			const errMsg = (errObj?.ErrorMessage || errObj?.Error_Message || '').toString()
+
+			// Retry once with swapped Rateplan_Id/Ratetype_Id mapping if ParametersMissing
+			if ((errCode === 'ParametersMissing' || /Missing parameters/i.test(errMsg)) && !req.query?.noRetry) {
+				const altRoom1 = {
+					...bookingData.Room_Details.Room_1,
+					Rateplan_Id: mappedRatetypeId,
+					Ratetype_Id: mappedRateplanId,
+				}
+				const altBookingData = {
+					...bookingData,
+					Room_Details: { Room_1: altRoom1 },
+				}
+				const altUrl = buildExternalInsertBookingUrl({ hotelCode, apiKey })
+				console.log('[insert-booking] retry with swapped ids', altUrl.replace(apiKey, '***'))
+				const altForm = new URLSearchParams()
+				altForm.set('BookingData', JSON.stringify(altBookingData))
+				const altResp = await fetch(altUrl, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body: altForm.toString(),
+				})
+				const altRaw = await altResp.json()
+				console.log('[insert-booking] retry vendorResponse', altRaw)
+				const altArrayError =
+					Array.isArray(altRaw) &&
+					altRaw.length > 0 &&
+					altRaw[0] &&
+					(typeof altRaw[0] === 'object') &&
+					(altRaw[0]['Error Details'] || altRaw[0]['ErrorDetails'])
+				if (!altRaw?.Errors && !altArrayError) {
+					return res.json({ success: true, data: altRaw, debug: req.query.debug ? { vendorUrl: altUrl, sent: altBookingData } : undefined })
+				}
+				// Fallthrough to return the original error, include alt attempt in debug
+				return res.status(400).json({
+					success: false,
+					message: errMsg || errCode || 'External API error',
+					data: raw,
+					sent: bookingData,
+					debug: { vendorUrl: url, altVendorUrl: altUrl, altSent: altBookingData },
+				})
+			}
+
 			return res.status(400).json({
 				success: false,
-				message:
-					(errObj?.ErrorMessage ||
-						errObj?.Error_Message ||
-						errObj?.Error_Code ||
-						'External API error'),
+				message: errMsg || errCode || 'External API error',
 				data: raw,
 				sent: bookingData,
 				debug: { vendorUrl: url },
