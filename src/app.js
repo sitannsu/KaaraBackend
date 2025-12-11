@@ -31,9 +31,11 @@ app.use(morgan('dev'));
 // DB connect (lazy, logs if missing)
 // Fallback URI if .env not loaded - password has # so use %23
 const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://kaara:flutter2023%23@cluster0.kizfgyl.mongodb.net/kaara?retryWrites=true&w=majority';
+// Force a consistent db name to avoid case mismatch errors (Mongo error code 13297)
+const mongoDbName = process.env.MONGODB_DB || 'kaara';
 if (mongoUri) {
 	mongoose
-		.connect(mongoUri, { serverSelectionTimeoutMS: 10000 })
+		.connect(mongoUri, { serverSelectionTimeoutMS: 10000, dbName: mongoDbName })
 		.then(() => console.log('MongoDB connected'))
 		.catch((err) => console.error('MongoDB connection error:', err.message));
 	
