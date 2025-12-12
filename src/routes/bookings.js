@@ -152,10 +152,67 @@ router.post('/', async (req, res, next) => {
 	}
 });
 
-// user history
+// user history - GET /api/bookings/:userId/history
 router.get('/:userId/history', async (req, res) => {
-	const data = await Booking.find({ userId: req.params.userId }).sort({ createdAt: -1 }).lean()
-	return res.json({ success: true, data })
+	try {
+		const { userId } = req.params;
+		
+		// Build filter - if userId is 'all' or null, return all bookings (for admin/testing)
+		const filter = {};
+		if (userId && userId !== 'all' && userId !== 'null') {
+			// Check if userId is a valid ObjectId
+			if (mongoose.Types.ObjectId.isValid(userId)) {
+				filter.userId = userId;
+			} else {
+				// If not a valid ObjectId, try to find by guestName or email as fallback
+				// This allows querying by guest name for testing
+				filter.$or = [
+					{ guestName: { $regex: userId, $options: 'i' } },
+					{ email: { $regex: userId, $options: 'i' } }
+				];
+			}
+		}
+		
+		// Fetch bookings with optional hotel population
+		const bookings = await Booking.find(filter)
+			.sort({ createdAt: -1 })
+			.limit(100) // Limit to prevent large responses
+			.lean();
+		
+		// Optionally populate hotel information if hotelId exists
+		const bookingsWithHotel = await Promise.all(
+			bookings.map(async (booking) => {
+				if (booking.hotelId && mongoose.Types.ObjectId.isValid(booking.hotelId)) {
+					try {
+						const hotel = await Hotel.findById(booking.hotelId)
+							.select('name slug address city state country images')
+							.lean();
+						return {
+							...booking,
+							hotel: hotel || null,
+						};
+					} catch (err) {
+						console.warn('Hotel lookup failed for booking:', booking._id, err.message);
+						return booking;
+					}
+				}
+				return booking;
+			})
+		);
+		
+		return res.json({ 
+			success: true, 
+			data: bookingsWithHotel,
+			count: bookingsWithHotel.length 
+		});
+	} catch (error) {
+		console.error('User booking history error:', error);
+		return res.status(500).json({ 
+			success: false, 
+			message: 'Failed to fetch booking history',
+			error: error.message 
+		});
+	}
 });
 
 // GET /api/bookings/:id
