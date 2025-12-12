@@ -34,8 +34,8 @@ router.post('/', async (req, res, next) => {
 		// Check MongoDB connection state
 		const connectionState = mongoose.connection.readyState;
 		if (connectionState !== 1) { // 1 = connected, 0 = disconnected, 2 = connecting, 3 = disconnecting
-			return res.status(503).json({ 
-				success: false, 
+			return res.status(503).json({
+				success: false,
 				message: 'Database not connected. Please check MongoDB connection.',
 				connectionState: ['disconnected', 'connected', 'connecting', 'disconnecting'][connectionState]
 			});
@@ -44,7 +44,7 @@ router.post('/', async (req, res, next) => {
 		const payload = req.body || {}
 		let resolvedHotelId = null;
 		const originalHotelId = payload.hotelId;
-		
+
 		// Try to resolve hotelId with timeout (3 seconds)
 		try {
 			const resolvePromise = resolveHotelId(payload.hotelId);
@@ -54,7 +54,7 @@ router.post('/', async (req, res, next) => {
 			// Hotel lookup failed or timed out - store slug instead
 			console.warn('Hotel lookup failed/timed out:', e.message);
 		}
-		
+
 		// Prepare external IPMS InsertBooking call
 		const HOTEL_CODE = process.env.IPMS_HOTEL_CODE || '43398';
 		const API_KEY = process.env.IPMS_API_KEY || '29800837887e1b9e5b-0578-11f0-a';
@@ -156,10 +156,14 @@ router.post('/', async (req, res, next) => {
 router.get('/:userId/history', async (req, res) => {
 	try {
 		const { userId } = req.params;
-		
+
 		// Build filter - if userId is 'all' or null, return all bookings (for admin/testing)
 		const filter = {};
-		if (userId && userId !== 'all' && userId !== 'null') {
+
+		// explicit check to ensure we don't pass 'all' or invalid strings to ObjectId field
+		const isSpecificUser = userId && userId.toLowerCase() !== 'all' && userId !== 'null' && userId !== 'undefined';
+
+		if (isSpecificUser) {
 			// Check if userId is a valid ObjectId
 			if (mongoose.Types.ObjectId.isValid(userId)) {
 				filter.userId = userId;
@@ -172,13 +176,13 @@ router.get('/:userId/history', async (req, res) => {
 				];
 			}
 		}
-		
+
 		// Fetch bookings with optional hotel population
 		const bookings = await Booking.find(filter)
 			.sort({ createdAt: -1 })
 			.limit(100) // Limit to prevent large responses
 			.lean();
-		
+
 		// Optionally populate hotel information if hotelId exists
 		const bookingsWithHotel = await Promise.all(
 			bookings.map(async (booking) => {
@@ -199,25 +203,29 @@ router.get('/:userId/history', async (req, res) => {
 				return booking;
 			})
 		);
-		
-		return res.json({ 
-			success: true, 
+
+		return res.json({
+			success: true,
 			data: bookingsWithHotel,
-			count: bookingsWithHotel.length 
+			count: bookingsWithHotel.length
 		});
 	} catch (error) {
 		console.error('User booking history error:', error);
-		return res.status(500).json({ 
-			success: false, 
+		return res.status(500).json({
+			success: false,
 			message: 'Failed to fetch booking history',
-			error: error.message 
+			error: error.message
 		});
 	}
 });
 
 // GET /api/bookings/:id
 router.get('/:id', async (req, res) => {
-	const data = await Booking.findById(req.params.id).lean()
+	const { id } = req.params;
+	if (!mongoose.Types.ObjectId.isValid(id)) {
+		return res.status(404).json({ success: false, message: 'Invalid ID format' });
+	}
+	const data = await Booking.findById(id).lean()
 	if (!data) return res.status(404).json({ success: false, message: 'Not found' })
 	return res.json({ success: true, data })
 });
