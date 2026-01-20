@@ -38,7 +38,7 @@ if (mongoUri) {
 		.connect(mongoUri, { serverSelectionTimeoutMS: 10000, dbName: mongoDbName })
 		.then(() => console.log('MongoDB connected'))
 		.catch((err) => console.error('MongoDB connection error:', err.message));
-	
+
 	// Log connection state changes
 	mongoose.connection.on('connected', () => console.log('MongoDB: connected'));
 	mongoose.connection.on('disconnected', () => console.warn('MongoDB: disconnected'));
@@ -59,6 +59,7 @@ function mount(path, router) {
 // Routes
 mount('/health', healthRouter);
 app.use('/v1/auth', otpLimiter, authRouter);
+app.use('/api/auth', authRouter); // mobile auth steps
 app.use('/api/auth', adminAuthRouter); // admin auth spec
 mount('/hotels', hotelRouter);
 app.use('/v1', roomRouter); // exposes /hotels/:id/rooms and /rooms/:id

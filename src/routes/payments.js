@@ -10,7 +10,8 @@ router.post('/razorpay/order', async (req, res) => {
 		const keyId = process.env.RAZORPAY_KEY_ID;
 		const keySecret = process.env.RAZORPAY_KEY_SECRET;
 		if (!keyId || !keySecret) {
-			return res.status(500).json({ success: false, message: 'Razorpay keys not configured' });
+			console.error('Razorpay keys not configured. KeyId:', !!keyId, 'KeySecret:', !!keySecret);
+			return res.status(500).json({ success: false, message: 'Razorpay keys not configured. Please check environment variables.' });
 		}
 		const amountInRupees = Number(req.body?.amount || 0);
 		if (!amountInRupees || amountInRupees <= 0) {
@@ -25,6 +26,7 @@ router.post('/razorpay/order', async (req, res) => {
 			notes: req.body?.notes || {},
 		};
 		const auth = Buffer.from(`${keyId}:${keySecret}`).toString('base64');
+		console.log('Creating Razorpay order for amount:', amountInRupees, 'INR (', amountPaise, 'paise)');
 		const resp = await fetch('https://api.razorpay.com/v1/orders', {
 			method: 'POST',
 			headers: {
@@ -35,10 +37,19 @@ router.post('/razorpay/order', async (req, res) => {
 		});
 		const data = await resp.json();
 		if (!resp.ok) {
-			return res.status(resp.status).json({ success: false, message: data?.error?.description || 'Failed to create order', details: data });
+			console.error('Razorpay order creation failed:', data);
+			const errorMsg = data?.error?.description || data?.error?.reason || 'Failed to create order';
+			return res.status(resp.status).json({ 
+				success: false, 
+				message: errorMsg,
+				error: data?.error,
+				details: data 
+			});
 		}
+		console.log('Razorpay order created successfully:', data.id);
 		return res.json({ success: true, order: data, keyId });
 	} catch (e) {
+		console.error('Razorpay order creation error:', e);
 		return res.status(500).json({ success: false, message: e?.message || 'Order creation failed' });
 	}
 });
