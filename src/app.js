@@ -18,6 +18,12 @@ import { router as analyticsRouter } from './routes/analytics.js';
 import { router as filesRouter } from './routes/files.js';
 import { router as integrationsRouter } from './routes/integrations.js';
 import { router as liveRatesRouter } from './routes/liveRates.js';
+import { router as debentureHoldersRouter } from './routes/debentureHolders.js';
+import { router as notesRouter } from './routes/notes.js';
+import { router as isinRouter } from './routes/isins.js';
+import { router as documentsRouter } from './routes/documents.js';
+import { router as dir3KycRouter } from './routes/dir3Kyc.js';
+import { router as mcaRouter } from './routes/mca.js';
 
 const app = express();
 
@@ -72,6 +78,18 @@ mount('/analytics', analyticsRouter);
 mount('/files', filesRouter);
 mount('/integrations', integrationsRouter);
 mount('/live-rates', liveRatesRouter);
+mount('/debenture-holders', debentureHoldersRouter);
+app.use('/api/v1/debenture-holders', debentureHoldersRouter);
+mount('/notes', notesRouter);
+app.use('/api/v1/notes', notesRouter);
+mount('/isin', isinRouter);
+app.use('/api/v1/isin', isinRouter);
+mount('/documents', documentsRouter);
+app.use('/api/v1/documents', documentsRouter);
+mount('/dir3-kyc', dir3KycRouter);
+app.use('/api/v1/dir3-kyc', dir3KycRouter);
+mount('/mca', mcaRouter);
+app.use('/api/v1/mca', mcaRouter);
 
 // 404 handler
 app.use((req, res) => {

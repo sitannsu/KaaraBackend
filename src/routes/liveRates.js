@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { RateAdjustment } from '../models/RateAdjustment.js'
-import { getIpmsApiKey } from '../config/ipms.js'
+import { getIpmsApiKey, getIpmsHotelCode } from '../config/ipms.js'
 
 export const router = Router()
 
@@ -82,10 +82,10 @@ function applyDiscountToRate(baseRate, discount) {
 
 router.get('/', async (req, res) => {
 	try {
-		const hotelCode = String(req.query.hotelCode || '').trim()
+		const hotelCode = getIpmsHotelCode(String(req.query.hotelCode || '').trim())
 		const checkInDate = String(req.query.checkInDate || '').trim()
 		const checkOutDate = String(req.query.checkOutDate || '').trim()
-			const apiKey = String(req.query.apiKey || getIpmsApiKey(hotelCode) || '').trim()
+		const apiKey = String(req.query.apiKey || getIpmsApiKey(req.query.hotelCode) || '').trim()
 
 		if (!hotelCode || !checkInDate || !checkOutDate) {
 			return res.status(400).json({ success: false, message: 'Missing required params' })
@@ -135,10 +135,10 @@ router.get('/', async (req, res) => {
 // GET /live-rates/bookings?hotelCode=...&createdFrom=YYYY-MM-DD&createdTo=YYYY-MM-DD
 router.get('/bookings', async (req, res) => {
 	try {
-		const hotelCode = String(req.query.hotelCode || '').trim()
+		const hotelCode = getIpmsHotelCode(String(req.query.hotelCode || '').trim())
 		const createdFrom = req.query.createdFrom ? String(req.query.createdFrom).trim() : undefined
 		const createdTo = req.query.createdTo ? String(req.query.createdTo).trim() : undefined
-		const apiKey = String(req.query.apiKey || getIpmsApiKey(hotelCode) || '').trim()
+		const apiKey = String(req.query.apiKey || getIpmsApiKey(req.query.hotelCode) || '').trim()
 
 		if (!hotelCode) return res.status(400).json({ success: false, message: 'Missing hotelCode' })
 		if (!apiKey) {
@@ -165,8 +165,8 @@ router.get('/bookings', async (req, res) => {
 // GET /live-rates/room-types?hotelCode=...
 router.get('/room-types', async (req, res) => {
 	try {
-		const hotelCode = String(req.query.hotelCode || '').trim()
-		const apiKey = String(req.query.apiKey || getIpmsApiKey(hotelCode) || '').trim()
+		const hotelCode = getIpmsHotelCode(String(req.query.hotelCode || '').trim())
+		const apiKey = String(req.query.apiKey || getIpmsApiKey(req.query.hotelCode) || '').trim()
 		if (!hotelCode) return res.status(400).json({ success: false, message: 'Missing hotelCode' })
 		if (!apiKey) {
 			return res
@@ -198,8 +198,9 @@ router.get('/room-types', async (req, res) => {
 // }
 router.post('/insert-booking', async (req, res) => {
 	try {
+		const hotelCodeInternal = req.body?.hotelCode
+		const hotelCode = getIpmsHotelCode(String(hotelCodeInternal || '').trim())
 		const {
-			hotelCode,
 			checkInDate,
 			checkOutDate,
 			ids,
@@ -227,7 +228,7 @@ router.post('/insert-booking', async (req, res) => {
 			normalizedExtraChildAge = 2
 		}
 
-		const apiKey = String(req.query.apiKey || getIpmsApiKey(hotelCode) || '').trim()
+		const apiKey = String(req.query.apiKey || getIpmsApiKey(hotelCodeInternal) || '').trim()
 		if (!apiKey) return res.status(400).json({ success: false, message: 'Missing API key' })
 
 		// Log incoming request details (excluding secrets in body; apiKey only in URL param)

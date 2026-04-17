@@ -86,7 +86,7 @@ router.post('/complete-profile', async (req, res) => {
 		createdAt: new Date().toISOString()
 	};
 
-	// users.push(newUser); // In-memory persistence only works if process doesn't restart
+	users.push(newUser); // In-memory persistence only works if process doesn't restart
 
 	return res.json({
 		success: true,
