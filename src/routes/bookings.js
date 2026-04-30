@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Booking } from '../models/Booking.js'
 import { Hotel } from '../models/Hotel.js'
 import mongoose from 'mongoose';
+import { sendBookingConfirmation } from '../services/mailService.js';
 
 export const router = Router();
 
@@ -58,7 +59,7 @@ router.post('/', async (req, res, next) => {
 		// Prepare external IPMS InsertBooking call
 		const HOTEL_CODE = process.env.IPMS_HOTEL_CODE || '43398';
 		const API_KEY = process.env.IPMS_API_KEY || '29800837887e1b9e5b-0578-11f0-a';
-		const hardcodedEmail = 'test@test.com';
+		const guestEmailFromReq = payload.email || (payload.ipmsInsertPayload?.Email_Address) || 'guest@kaarahotels.com';
 
 		// If the frontend sent a ready payload, use it; else construct a minimal one
 		const ipmsPayload = (() => {
@@ -66,7 +67,7 @@ router.post('/', async (req, res, next) => {
 				// Force email override irrespective of what the client sent
 				return {
 					...payload.ipmsInsertPayload,
-					Email_Address: hardcodedEmail,
+					Email_Address: guestEmailFromReq,
 				};
 			}
 			// Fallback minimal mapper
@@ -94,7 +95,7 @@ router.post('/', async (req, res, next) => {
 				check_in_date: (payload.from || new Date()).toString().slice(0, 10),
 				check_out_date: (payload.to || new Date()).toString().slice(0, 10),
 				Booking_Payment_Mode: '',
-				Email_Address: hardcodedEmail,
+				Email_Address: guestEmailFromReq,
 				Source_Id: '',
 				MobileNo: '',
 				Address: '',
@@ -127,6 +128,8 @@ router.post('/', async (req, res, next) => {
 		}
 
 		// Normalize and save in Mongo
+		const guestEmail = payload.email || (payload.ipmsInsertPayload?.Email_Address) || payload.userId || 'guest@kaarahotels.com';
+
 		const doc = {
 			userId: payload.userId || null,
 			hotelId: resolvedHotelId,
@@ -139,13 +142,22 @@ router.post('/', async (req, res, next) => {
 			paymentStatus: payload.paymentStatus || 'pending',
 			status: payload.status || 'confirmed',
 			guestName: payload.guestName || payload.name || 'Guest',
-			email: hardcodedEmail,
+			email: guestEmail,
 			externalProvider: 'ipms247',
 			externalReservationId: ipmsResponse?.Reservation_Id || ipmsResponse?.reservation_id || null,
 			externalPayload: ipmsPayload,
 			externalResponse: ipmsResponse,
 		}
 		const created = await Booking.create(doc)
+		
+		// Send confirmation email in background
+		try {
+			const hotel = await Hotel.findById(resolvedHotelId).lean();
+			sendBookingConfirmation(created, hotel).catch(err => console.error('Background email failed:', err));
+		} catch (err) {
+			console.error('Failed to trigger email:', err);
+		}
+
 		return res.status(201).json({ success: true, data: created })
 	} catch (e) {
 		next(e)

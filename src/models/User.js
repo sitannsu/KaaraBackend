@@ -5,6 +5,8 @@ const userSchema = new mongoose.Schema(
 		name: { type: String },
 		phone: { type: String, index: true, unique: true, sparse: true },
 		email: { type: String, index: true, unique: true, sparse: true },
+		gender: { type: String, enum: ['Male', 'Female', 'Other', 'Prefer not to say'] },
+		dob: { type: String }, // DD/MM/YYYY
 		verified: { type: Boolean, default: false },
 		points: { type: Number, default: 0 },
 	},
