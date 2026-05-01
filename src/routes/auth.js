@@ -1,23 +1,7 @@
 import { Router } from 'express';
+import { User } from '../models/User.js';
 
 export const router = Router();
-
-// In-memory request store for demo (or just fully stateless with 1234)
-const users = [
-	{
-		id: 'u_demo',
-		phone: '1234567890',
-		name: 'Rohan Sharma',
-		email: 'rohan.sharma@email.com',
-		membership: 'Gold Member',
-		avatarUrl: 'https://i.pravatar.cc/150?img=12',
-		savedIdStatus: 'verified',
-		loyaltyPoints: 1240,
-		tierProgress: 24,
-		nextTier: 'Platinum',
-		newCouponsCount: 2
-	}
-];
 
 router.post('/send-otp', async (req, res) => {
 	const { phone } = req.body || {};
@@ -37,18 +21,23 @@ router.post('/verify-otp', async (req, res) => {
 		return res.status(400).json({ success: false, message: 'Invalid OTP' });
 	}
 
-	// Check if user exists (mock check)
-	// In a real app, query the User model: const user = await User.findOne({ phone });
-	// For demo: treat the specific demo phone as existing, others as new
-	let user = users.find(u => u.phone === phone || u.phone === `+91${phone}` || u.phone === phone.replace('+91', ''));
-
 	// Normalize phone for comparison
-	const rawPhone = phone.replace('+91', '').trim();
-	if (rawPhone === '1234567890') {
-		user = users[0];
-	}
+	const rawPhone = phone.replace('+91', '').replace(/\s/g, '').trim();
+	
+	// Check if user exists in DB
+	const user = await User.findOne({ 
+		$or: [
+			{ phone: rawPhone },
+			{ phone: `+91${rawPhone}` },
+			{ phone: phone.trim() }
+		]
+	});
 
 	if (user) {
+		// Update last login time
+		user.lastLogin = new Date();
+		await user.save();
+
 		return res.json({
 			success: true,
 			token: 'dummy.jwt.token',
@@ -66,31 +55,27 @@ router.post('/verify-otp', async (req, res) => {
 });
 
 router.post('/complete-profile', async (req, res) => {
-	const { phone, name, email } = req.body || {};
+	const { phone, name, email, gender, dob } = req.body || {};
 	if (!phone || !name || !email) {
 		return res.status(400).json({ success: false, message: 'Missing fields' });
 	}
 
-	// Create new user (mock)
-	const newUser = {
-		id: `u_${Date.now()}`,
-		phone,
+	const rawPhone = phone.replace('+91', '').replace(/\s/g, '').trim();
+
+	// Create new user in DB
+	const user = await User.create({
+		phone: rawPhone,
 		name,
 		email,
-		membership: 'Silver Member', // Default
-		savedIdStatus: 'pending',
-		loyaltyPoints: 0,
-		tierProgress: 0,
-		nextTier: 'Gold',
-		newCouponsCount: 0,
-		createdAt: new Date().toISOString()
-	};
-
-	users.push(newUser); // In-memory persistence only works if process doesn't restart
+		gender,
+		dob,
+		lastLogin: new Date(),
+		verified: true
+	});
 
 	return res.json({
 		success: true,
 		token: 'dummy.jwt.token',
-		user: newUser
+		user
 	});
 });

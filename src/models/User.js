@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema(
 		dob: { type: String }, // DD/MM/YYYY
 		verified: { type: Boolean, default: false },
 		points: { type: Number, default: 0 },
+		lastLogin: { type: Date },
 	},
 	{ timestamps: true }
 )
