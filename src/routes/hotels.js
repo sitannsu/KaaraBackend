@@ -26,6 +26,13 @@ router.get('/', async (req, res) => {
 	return res.json({ success: true, data });
 });
 
+// GET /hotels/:id/coupons - Get all coupons for a hotel
+router.get('/:id/coupons', async (req, res) => {
+	const hotel = await Hotel.findById(req.params.id).select('couponCodes');
+	if (!hotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+	return res.json({ success: true, data: hotel.couponCodes || [] });
+});
+
 router.get('/:id', async (req, res) => {
 	const { id } = req.params;
 	const byId = await Hotel.findById(id).lean();
@@ -66,6 +73,32 @@ router.delete('/:id', async (req, res) => {
 	const removed = await Hotel.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
 	if (!removed) return res.status(404).json({ success: false, message: 'Hotel not found' });
 	return res.json({ success: true, data: removed });
+});
+
+// POST /hotels/:id/coupons - Add a coupon to a hotel
+router.post('/:id/coupons', async (req, res) => {
+	const { label, code, discount } = req.body || {};
+	if (!label || !code) return res.status(400).json({ success: false, message: 'label and code required' });
+	
+	const hotel = await Hotel.findById(req.params.id);
+	if (!hotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+	
+	if (!hotel.couponCodes) hotel.couponCodes = [];
+	hotel.couponCodes.push({ label, code, discount: discount || 0 });
+	await hotel.save();
+	
+	return res.json({ success: true, data: hotel.couponCodes });
+});
+
+// DELETE /hotels/:id/coupons/:couponId - Remove a coupon
+router.delete('/:id/coupons/:couponId', async (req, res) => {
+	const hotel = await Hotel.findById(req.params.id);
+	if (!hotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+	
+	hotel.couponCodes = (hotel.couponCodes || []).filter(c => c._id.toString() !== req.params.couponId);
+	await hotel.save();
+	
+	return res.json({ success: true, data: hotel.couponCodes });
 });
 
 // POST /hotels/:id/images (stub)

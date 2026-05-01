@@ -18,6 +18,18 @@ const hotelSchema = new mongoose.Schema(
 		rating: { type: Number, default: 0 },
 		policies: { type: Object },
 		isActive: { type: Boolean, default: true },
+		branding: {
+			primaryColor: { type: String },
+			secondaryColor: { type: String },
+			logo: { type: String },
+		},
+		couponCodes: [
+			{
+				label: { type: String },
+				code: { type: String },
+				discount: { type: Number },
+			},
+		],
 	},
 	{ timestamps: true }
 )
