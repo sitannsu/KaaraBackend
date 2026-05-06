@@ -7,14 +7,20 @@ import { DEFAULT_SUBADMIN_PERMISSIONS, PERMISSION_KEYS } from '../utils/permissi
 
 export const router = Router()
 
-function superadminEmailsFromEnv() {
+// Super-admin emails: if SUPERADMIN_EMAILS is set (comma-separated), ONLY those addresses
+// get automatic super-admin on every successful login. If unset, we fall back to the
+// original owner accounts from early setups so bootstrap works without extra env.
+// For production hardening, set SUPERADMIN_EMAILS explicitly (then defaults are not used).
+const DEFAULT_OWNER_SUPERADMIN_EMAILS = ['admin@gmail.com', 'admin@kaara.com']
+
+function superadminEmailSet() {
 	const raw = process.env.SUPERADMIN_EMAILS || ''
-	return new Set(
-		raw
-			.split(',')
-			.map(s => s.trim().toLowerCase())
-			.filter(Boolean)
-	)
+	const fromEnv = raw
+		.split(',')
+		.map(s => s.trim().toLowerCase())
+		.filter(Boolean)
+	const list = fromEnv.length > 0 ? fromEnv : DEFAULT_OWNER_SUPERADMIN_EMAILS
+	return new Set(list)
 }
 
 function publicAdmin(admin) {
@@ -41,11 +47,11 @@ router.post('/login', async (req, res) => {
 	if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' })
 
 	const emailLower = String(admin.email).toLowerCase()
-	const envSupers = superadminEmailsFromEnv()
+	const ownerSupers = superadminEmailSet()
 	const superCount = await Admin.countDocuments({ role: 'superadmin' })
 
-	// 1) Emails listed in SUPERADMIN_EMAILS are always superadmin (comma-separated, env on server).
-	if (envSupers.has(emailLower)) {
+	// 1) Emails in SUPERADMIN_EMAILS (or default owner list if env empty) → always superadmin.
+	if (ownerSupers.has(emailLower)) {
 		admin.role = 'superadmin'
 		admin.permissions = []
 	}
