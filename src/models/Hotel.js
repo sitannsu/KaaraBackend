@@ -30,6 +30,19 @@ const hotelSchema = new mongoose.Schema(
 				discount: { type: Number },
 			},
 		],
+		addOns: [
+			{
+				id: { type: String },
+				title: { type: String, required: true },
+				description: { type: String },
+				price: { type: Number, required: true, default: 0 },
+				category: { type: String },
+				isTaxInclusive: { type: Boolean, default: false },
+				defaultSelected: { type: Boolean, default: false },
+				maxQuantity: { type: Number, default: 1 },
+				isActive: { type: Boolean, default: true },
+			},
+		],
 	},
 	{ timestamps: true }
 )

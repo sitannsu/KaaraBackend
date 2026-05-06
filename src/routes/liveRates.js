@@ -1,5 +1,7 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import { RateAdjustment } from '../models/RateAdjustment.js'
+import { Room } from '../models/Room.js'
 import { getIpmsApiKey, getIpmsHotelCode } from '../config/ipms.js'
 
 export const router = Router()
@@ -113,12 +115,37 @@ router.get('/', async (req, res) => {
 			(adjustments || []).map((a) => [`${a.hotelCode}:${a.roomtypeunkid}`, a.discount])
 		)
 
+		// Build a map of admin-uploaded room images keyed by lowercased name,
+		// so we can fill in `room_images` when the upstream IPMS feed returns
+		// none. Only runs when the inbound hotelCode is our Mongo ObjectId
+		// (mobile sends hotel._id; admin-curated docs are keyed by it too).
+		const mongoHotelId = String(req.query.hotelCode || '').trim()
+		let nameToImages = new Map()
+		if (mongoose.isValidObjectId(mongoHotelId)) {
+			const adminRooms = await Room.find({ hotelId: mongoHotelId })
+				.select({ name: 1, images: 1 })
+				.lean()
+			nameToImages = new Map(
+				(adminRooms || [])
+					.filter((r) => Array.isArray(r.images) && r.images.length > 0)
+					.map((r) => [String(r.name || '').trim().toLowerCase(), r.images])
+			)
+		}
+
 		const data = roomsArray.map((r) => {
 			const base_rate = parseBaseRate(r)
 			const discount = keyToDiscount.get(`${hotelCode}:${r.roomtypeunkid}`) || null
 			const effective_rate = applyDiscountToRate(base_rate, discount)
+			// Only fall back to admin-uploaded images if IPMS gave us nothing.
+			const ipmsImages = Array.isArray(r.room_images) ? r.room_images : []
+			const fallbackImages = nameToImages.get(
+				String(r.Room_Name || '').trim().toLowerCase()
+			)
+			const room_images =
+				ipmsImages.length > 0 ? ipmsImages : fallbackImages || ipmsImages
 			return {
 				...r,
+				room_images,
 				base_rate,
 				discount,
 				effective_rate,

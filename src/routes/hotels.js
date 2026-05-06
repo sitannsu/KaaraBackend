@@ -105,3 +105,65 @@ router.delete('/:id/coupons/:couponId', async (req, res) => {
 router.post('/:id/images', async (req, res) => {
 	return res.json({ success: true, data: { uploadUrls: [], images: [] } });
 });
+
+// --- Add-ons (per-hotel customizations like Breakfast, Airport Transfer, Extra Bed) ---
+
+function normalizeAddOnPayload(input = {}) {
+	const out = {
+		id: input.id ? slugify(String(input.id)) : (input.title ? slugify(String(input.title)) : undefined),
+		title: input.title,
+		description: input.description,
+		price: input.price != null ? Number(input.price) : 0,
+		category: input.category,
+		isTaxInclusive: !!input.isTaxInclusive,
+		defaultSelected: !!input.defaultSelected,
+		maxQuantity: input.maxQuantity != null ? Number(input.maxQuantity) : 1,
+		isActive: input.isActive != null ? !!input.isActive : true,
+	};
+	return out;
+}
+
+// GET /hotels/:id/addons
+router.get('/:id/addons', async (req, res) => {
+	const hotel = await Hotel.findById(req.params.id).select('addOns');
+	if (!hotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+	return res.json({ success: true, data: hotel.addOns || [] });
+});
+
+// POST /hotels/:id/addons
+router.post('/:id/addons', async (req, res) => {
+	const payload = normalizeAddOnPayload(req.body || {});
+	if (!payload.title) return res.status(400).json({ success: false, message: 'title required' });
+
+	const hotel = await Hotel.findById(req.params.id);
+	if (!hotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+
+	hotel.addOns = hotel.addOns || [];
+	hotel.addOns.push(payload);
+	await hotel.save();
+	return res.json({ success: true, data: hotel.addOns });
+});
+
+// PUT /hotels/:id/addons/:addonId
+router.put('/:id/addons/:addonId', async (req, res) => {
+	const hotel = await Hotel.findById(req.params.id);
+	if (!hotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+
+	const addon = (hotel.addOns || []).id(req.params.addonId);
+	if (!addon) return res.status(404).json({ success: false, message: 'Add-on not found' });
+
+	const updates = normalizeAddOnPayload({ ...addon.toObject(), ...(req.body || {}) });
+	Object.assign(addon, updates);
+	await hotel.save();
+	return res.json({ success: true, data: hotel.addOns });
+});
+
+// DELETE /hotels/:id/addons/:addonId
+router.delete('/:id/addons/:addonId', async (req, res) => {
+	const hotel = await Hotel.findById(req.params.id);
+	if (!hotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+
+	hotel.addOns = (hotel.addOns || []).filter(a => a._id.toString() !== req.params.addonId);
+	await hotel.save();
+	return res.json({ success: true, data: hotel.addOns });
+});
