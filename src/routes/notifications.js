@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Notification } from '../models/Notification.js';
 import { User } from '../models/User.js';
+import { pushNotificationService } from '../services/pushNotification.js';
 
 export const router = Router();
 
@@ -42,12 +43,25 @@ router.post('/send-to-all', async (req, res) => {
 
 		await notification.save();
 
+		// Send FCM push notification to all users
+		const pushResult = await pushNotificationService.sendToAll({
+			title,
+			body: message,
+			data: {
+				notificationId: notification._id.toString(),
+				type,
+				actionLink: actionLink || '',
+				imageUrl: imageUrl || '',
+			}
+		});
+
 		return res.json({
 			success: true,
 			message: `Notification sent to ${userIds.length} users`,
 			data: {
 				notificationId: notification._id,
-				recipientCount: userIds.length
+				recipientCount: userIds.length,
+				pushResult
 			}
 		});
 	} catch (error) {
@@ -96,10 +110,25 @@ router.post('/send-to-user', async (req, res) => {
 
 		await notification.save();
 
+		// Send FCM push notification to the specific user
+		const pushResult = await pushNotificationService.sendToUser(userId, {
+			title,
+			body: message,
+			data: {
+				notificationId: notification._id.toString(),
+				type,
+				actionLink: actionLink || '',
+				imageUrl: imageUrl || '',
+			}
+		});
+
 		return res.json({
 			success: true,
 			message: 'Notification sent successfully',
-			data: { notificationId: notification._id }
+			data: {
+				notificationId: notification._id,
+				pushResult
+			}
 		});
 	} catch (error) {
 		console.error('Error sending notification:', error);

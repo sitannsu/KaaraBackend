@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema(
 		verified: { type: Boolean, default: false },
 		points: { type: Number, default: 0 },
 		lastLogin: { type: Date },
+		// FCM token for push notifications
+		fcmToken: { type: String, default: null },
+		fcmTokenUpdatedAt: { type: Date, default: null },
 	},
 	{ timestamps: true }
 )
