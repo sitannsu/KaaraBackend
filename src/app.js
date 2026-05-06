@@ -26,6 +26,7 @@ import { router as documentsRouter } from './routes/documents.js';
 import { router as dir3KycRouter } from './routes/dir3Kyc.js';
 import { router as mcaRouter } from './routes/mca.js';
 import { router as userRouter } from './routes/users.js';
+import { router as notificationRouter } from './routes/notifications.js';
 
 const app = express();
 
@@ -95,6 +96,7 @@ app.use('/api/v1/dir3-kyc', dir3KycRouter);
 mount('/mca', mcaRouter);
 app.use('/api/v1/mca', mcaRouter);
 mount('/users', userRouter);
+mount('/notifications', notificationRouter);
 
 // 404 handler
 app.use((req, res) => {
