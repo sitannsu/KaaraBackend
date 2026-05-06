@@ -7,12 +7,22 @@ import { DEFAULT_SUBADMIN_PERMISSIONS, PERMISSION_KEYS } from '../utils/permissi
 
 export const router = Router()
 
+function superadminEmailsFromEnv() {
+	const raw = process.env.SUPERADMIN_EMAILS || ''
+	return new Set(
+		raw
+			.split(',')
+			.map(s => s.trim().toLowerCase())
+			.filter(Boolean)
+	)
+}
+
 function publicAdmin(admin) {
 	return {
 		id: admin._id,
 		email: admin.email,
 		name: admin.name,
-		role: admin.role,
+		role: admin.role || 'subadmin',
 		permissions: admin.permissions || [],
 		isActive: admin.isActive,
 	}
@@ -30,12 +40,26 @@ router.post('/login', async (req, res) => {
 	const isMatch = await bcrypt.compare(password, admin.password)
 	if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' })
 
-	// Auto-promote pre-existing admin docs (created before role field existed) to superadmin
-	// so the original owner is not locked out after this migration.
-	if (!admin.role) {
-		const totalSuperadmins = await Admin.countDocuments({ role: 'superadmin' })
-		admin.role = totalSuperadmins === 0 ? 'superadmin' : 'subadmin'
+	const emailLower = String(admin.email).toLowerCase()
+	const envSupers = superadminEmailsFromEnv()
+	const superCount = await Admin.countDocuments({ role: 'superadmin' })
+
+	// 1) Emails listed in SUPERADMIN_EMAILS are always superadmin (comma-separated, env on server).
+	if (envSupers.has(emailLower)) {
+		admin.role = 'superadmin'
+		admin.permissions = []
 	}
+	// 2) Bootstrap: Admin schema defaults role to 'subadmin', so "no role in DB" never happened.
+	// If there is still no superadmin in the database, promote whoever logs in next (owner account).
+	else if (superCount === 0) {
+		admin.role = 'superadmin'
+		admin.permissions = []
+	}
+	// 3) Legacy: documents with missing role field
+	else if (!admin.role) {
+		admin.role = 'subadmin'
+	}
+
 	admin.lastLoginAt = new Date()
 	await admin.save()
 
