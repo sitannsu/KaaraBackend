@@ -32,7 +32,27 @@ const app = express();
 
 // Core middleware
 app.use(helmet());
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*', credentials: true }));
+const allowedOrigins = [
+	'https://kaarahoteladmin.web.app',
+	'http://localhost:5173',
+	'http://localhost:3000',
+	process.env.CLIENT_ORIGIN
+].filter(Boolean);
+app.use(cors({
+	origin: function (origin, callback) {
+		// Allow requests with no origin (mobile apps, curl, etc.)
+		if (!origin) return callback(null, true);
+		if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+			return callback(null, true);
+		}
+		// Check for Netlify preview deployments
+		if (origin?.includes('netlify.app')) {
+			return callback(null, true);
+		}
+		callback(new Error('Not allowed by CORS'));
+	},
+	credentials: true
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(morgan('dev'));
