@@ -127,8 +127,8 @@ router.post('/', async (req, res, next) => {
 			ipmsResponse = { error: true, message: err?.message || 'InsertBooking call failed' };
 		}
 
-		// Normalize and save in Mongo
-		const guestEmail = payload.email || (payload.ipmsInsertPayload?.Email_Address) || payload.userId || 'guest@kaarahotels.com';
+		// Normalize and save in Mongo — email is the primary lookup key for booking history
+		const guestEmail = (payload.email || payload.ipmsInsertPayload?.Email_Address || 'guest@kaarahotels.com').toLowerCase().trim();
 
 		// Only store userId if it is a valid ObjectId — never store email strings there
 		const safeUserId = payload.userId && mongoose.Types.ObjectId.isValid(payload.userId)
@@ -170,23 +170,32 @@ router.post('/', async (req, res, next) => {
 });
 
 // user history - GET /api/bookings/:userId/history
+// :userId can be a MongoDB ObjectId, email address, or phone number
 router.get('/:userId/history', async (req, res) => {
 	try {
 		const { userId } = req.params;
 
-		// Build filter - if userId is 'all' or null, return all bookings (for admin/testing)
 		const filter = {};
-
-		// explicit check to ensure we don't pass 'all' or invalid strings to ObjectId field
 		const isSpecificUser = userId && userId.toLowerCase() !== 'all' && userId !== 'null' && userId !== 'undefined';
 
 		if (isSpecificUser) {
-			// Check if userId is a valid ObjectId
-			if (mongoose.Types.ObjectId.isValid(userId)) {
+			const isEmail = userId.includes('@');
+			const isPhone = /^\+?\d{7,15}$/.test(userId.replace(/\s/g, ''));
+
+			if (isEmail) {
+				// Exact email match — covers all bookings regardless of userId field
+				filter.email = userId.toLowerCase().trim();
+			} else if (isPhone) {
+				// Normalise and match bare digits suffix (last 10 digits)
+				const digits = userId.replace(/\D/g, '').slice(-10);
+				filter.$or = [
+					{ email: { $regex: digits } },       // phone stored as email fallback
+					{ 'externalPayload.MobileNo': { $regex: digits } }
+				];
+			} else if (mongoose.Types.ObjectId.isValid(userId)) {
+				// ObjectId — find by userId OR by email of that user
 				filter.userId = userId;
 			} else {
-				// If not a valid ObjectId, try to find by guestName or email as fallback
-				// This allows querying by guest name for testing
 				filter.$or = [
 					{ guestName: { $regex: userId, $options: 'i' } },
 					{ email: { $regex: userId, $options: 'i' } }
