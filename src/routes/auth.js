@@ -1,31 +1,53 @@
 import { Router } from 'express';
 import { User } from '../models/User.js';
+import { signJwt } from '../utils/jwt.js';
+import { sendWhatsAppOtp } from '../services/whatsappService.js';
+import { generateOtp, saveOtp, verifyOtp } from '../utils/otpStore.js';
 
 export const router = Router();
 
+// POST /auth/send-otp
 router.post('/send-otp', async (req, res) => {
 	const { phone } = req.body || {};
 	if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
 
-	// In production, trigger SMS here.
-	console.log(`OTP sent to ${phone}: 1234`);
+	const otp = generateOtp();
+	saveOtp(phone, otp);
 
-	return res.json({ success: true, message: 'OTP sent' });
+	try {
+		const result = await sendWhatsAppOtp(phone, otp);
+		if (!result.success) {
+			return res.status(502).json({ success: false, message: 'Failed to send OTP via WhatsApp', detail: result.error });
+		}
+	} catch (err) {
+		console.error('[send-otp]', err);
+		return res.status(500).json({ success: false, message: 'OTP delivery error' });
+	}
+
+	return res.json({ success: true, message: 'OTP sent via WhatsApp' });
 });
 
+// POST /auth/verify-otp
 router.post('/verify-otp', async (req, res) => {
 	const { phone, otp } = req.body || {};
 	if (!phone || !otp) return res.status(400).json({ success: false, message: 'phone and otp required' });
 
-	if (otp !== '1234') {
+	const result = verifyOtp(phone, otp);
+
+	if (result === 'expired') {
+		return res.status(400).json({ success: false, message: 'OTP expired. Please request a new one.' });
+	}
+	if (result === 'max_attempts') {
+		return res.status(429).json({ success: false, message: 'Too many wrong attempts. Please request a new OTP.' });
+	}
+	if (result === 'invalid') {
 		return res.status(400).json({ success: false, message: 'Invalid OTP' });
 	}
 
-	// Normalize phone for comparison
-	const rawPhone = phone.replace('+91', '').replace(/\s/g, '').trim();
-	
-	// Check if user exists in DB
-	const user = await User.findOne({ 
+	// OTP is valid — look up user
+	const rawPhone = phone.replace(/^\+91/, '').replace(/\s/g, '').trim();
+
+	const user = await User.findOne({
 		$or: [
 			{ phone: rawPhone },
 			{ phone: `+91${rawPhone}` },
@@ -34,35 +56,38 @@ router.post('/verify-otp', async (req, res) => {
 	});
 
 	if (user) {
-		// Update last login time
 		user.lastLogin = new Date();
 		await user.save();
 
+		const token = signJwt({ userId: user._id, phone: user.phone });
+
 		return res.json({
 			success: true,
-			token: 'dummy.jwt.token',
+			token,
 			user,
 			isNewUser: false
 		});
 	}
 
-	// New user flow
+	// New user — issue a short-lived registration token
+	const regToken = signJwt({ phone: rawPhone, isRegistration: true }, '15m');
+
 	return res.json({
 		success: true,
-		token: 'temp.registration.token',
+		token: regToken,
 		isNewUser: true
 	});
 });
 
+// POST /auth/complete-profile
 router.post('/complete-profile', async (req, res) => {
 	const { phone, name, email, gender, dob } = req.body || {};
 	if (!phone || !name || !email) {
 		return res.status(400).json({ success: false, message: 'Missing fields' });
 	}
 
-	const rawPhone = phone.replace('+91', '').replace(/\s/g, '').trim();
+	const rawPhone = phone.replace(/^\+91/, '').replace(/\s/g, '').trim();
 
-	// Create new user in DB
 	const user = await User.create({
 		phone: rawPhone,
 		name,
@@ -73,9 +98,11 @@ router.post('/complete-profile', async (req, res) => {
 		verified: true
 	});
 
+	const token = signJwt({ userId: user._id, phone: user.phone });
+
 	return res.json({
 		success: true,
-		token: 'dummy.jwt.token',
+		token,
 		user
 	});
 });
