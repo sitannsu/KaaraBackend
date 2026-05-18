@@ -130,8 +130,13 @@ router.post('/', async (req, res, next) => {
 		// Normalize and save in Mongo
 		const guestEmail = payload.email || (payload.ipmsInsertPayload?.Email_Address) || payload.userId || 'guest@kaarahotels.com';
 
+		// Only store userId if it is a valid ObjectId — never store email strings there
+		const safeUserId = payload.userId && mongoose.Types.ObjectId.isValid(payload.userId)
+			? payload.userId
+			: null;
+
 		const doc = {
-			userId: payload.userId || null,
+			userId: safeUserId,
 			hotelId: resolvedHotelId,
 			hotelSlug: resolvedHotelId ? null : originalHotelId, // Store slug if lookup failed
 			roomId: payload.roomId || null,

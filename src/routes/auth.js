@@ -45,12 +45,16 @@ router.post('/verify-otp', async (req, res) => {
 	}
 
 	// OTP is valid — look up user
-	const rawPhone = phone.replace(/^\+91/, '').replace(/\s/g, '').trim();
+	// Normalise to bare 10-digit number regardless of what prefix was sent
+	const stripped = phone.replace(/\s/g, '').trim()
+		.replace(/^\+91/, '')   // remove +91
+		.replace(/^91(?=\d{10}$)/, ''); // remove leading 91 when followed by exactly 10 digits
 
 	const user = await User.findOne({
 		$or: [
-			{ phone: rawPhone },
-			{ phone: `+91${rawPhone}` },
+			{ phone: stripped },
+			{ phone: `91${stripped}` },
+			{ phone: `+91${stripped}` },
 			{ phone: phone.trim() }
 		]
 	});
@@ -86,7 +90,9 @@ router.post('/complete-profile', async (req, res) => {
 		return res.status(400).json({ success: false, message: 'Missing fields' });
 	}
 
-	const rawPhone = phone.replace(/^\+91/, '').replace(/\s/g, '').trim();
+	const rawPhone = phone.replace(/\s/g, '').trim()
+		.replace(/^\+91/, '')
+		.replace(/^91(?=\d{10}$)/, '');
 
 	const user = await User.create({
 		phone: rawPhone,
