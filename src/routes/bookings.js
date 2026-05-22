@@ -183,18 +183,29 @@ router.get('/:userId/history', async (req, res) => {
 			const isPhone = /^\+?\d{7,15}$/.test(userId.replace(/\s/g, ''));
 
 			if (isEmail) {
-				// Exact email match — covers all bookings regardless of userId field
-				filter.email = userId.toLowerCase().trim();
+				const emailLower = userId.toLowerCase().trim();
+				// Match by email OR by userId if we also get an objectId via query param
+				const extraId = req.query.uid;
+				if (extraId && mongoose.Types.ObjectId.isValid(extraId)) {
+					filter.$or = [
+						{ email: emailLower },
+						{ userId: extraId }
+					];
+				} else {
+					filter.email = emailLower;
+				}
 			} else if (isPhone) {
-				// Normalise and match bare digits suffix (last 10 digits)
 				const digits = userId.replace(/\D/g, '').slice(-10);
 				filter.$or = [
-					{ email: { $regex: digits } },       // phone stored as email fallback
+					{ email: { $regex: digits } },
 					{ 'externalPayload.MobileNo': { $regex: digits } }
 				];
 			} else if (mongoose.Types.ObjectId.isValid(userId)) {
-				// ObjectId — find by userId OR by email of that user
-				filter.userId = userId;
+				// Search by userId ObjectId OR by guestName
+				filter.$or = [
+					{ userId: userId },
+					{ guestName: { $regex: userId, $options: 'i' } }
+				];
 			} else {
 				filter.$or = [
 					{ guestName: { $regex: userId, $options: 'i' } },
