@@ -34,7 +34,11 @@ const app = express();
 app.use(helmet());
 const allowedOrigins = [
 	'https://kaarahoteladmin.web.app',
+	'https://kaarahotels.com',
+	'https://www.kaarahotels.com',
 	'http://localhost:5173',
+	'http://localhost:5174',
+	'http://localhost:5175',
 	'http://localhost:3000',
 	process.env.CLIENT_ORIGIN
 ].filter(Boolean);
