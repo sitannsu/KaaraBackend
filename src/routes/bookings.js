@@ -181,36 +181,41 @@ router.get('/:userId/history', async (req, res) => {
 		if (isSpecificUser) {
 			const isEmail = userId.includes('@');
 			const isPhone = /^\+?\d{7,15}$/.test(userId.replace(/\s/g, ''));
+			// ?uid= lets the mobile pass the MongoDB _id as a guaranteed fallback
+			const extraId = req.query.uid;
+			const hasExtraId = extraId && mongoose.Types.ObjectId.isValid(extraId);
 
 			if (isEmail) {
 				const emailLower = userId.toLowerCase().trim();
-				// Match by email OR by userId if we also get an objectId via query param
-				const extraId = req.query.uid;
-				if (extraId && mongoose.Types.ObjectId.isValid(extraId)) {
-					filter.$or = [
-						{ email: emailLower },
-						{ userId: extraId }
-					];
+				if (hasExtraId) {
+					filter.$or = [{ email: emailLower }, { userId: extraId }];
 				} else {
 					filter.email = emailLower;
 				}
 			} else if (isPhone) {
 				const digits = userId.replace(/\D/g, '').slice(-10);
-				filter.$or = [
+				const phoneClauses = [
 					{ email: { $regex: digits } },
 					{ 'externalPayload.MobileNo': { $regex: digits } }
 				];
+				filter.$or = hasExtraId
+					? [...phoneClauses, { userId: extraId }]
+					: phoneClauses;
 			} else if (mongoose.Types.ObjectId.isValid(userId)) {
-				// Search by userId ObjectId OR by guestName
-				filter.$or = [
-					{ userId: userId },
-					{ guestName: { $regex: userId, $options: 'i' } }
-				];
+				filter.$or = hasExtraId
+					? [{ userId: userId }, { userId: extraId }]
+					: [{ userId: userId }];
 			} else {
-				filter.$or = [
-					{ guestName: { $regex: userId, $options: 'i' } },
-					{ email: { $regex: userId, $options: 'i' } }
-				];
+				// Fallback (e.g. "cvv" or any non-standard value):
+				// always try to match by the reliable MongoDB _id if provided
+				if (hasExtraId) {
+					filter.userId = extraId;
+				} else {
+					filter.$or = [
+						{ guestName: { $regex: userId, $options: 'i' } },
+						{ email: { $regex: userId, $options: 'i' } }
+					];
+				}
 			}
 		}
 
